@@ -1,8 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/auth_service.dart';
 import 'edit_profile_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final AuthService _authService = AuthService();
+  Map<String, dynamic>? _userData;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      final data = await _authService.getUserData(user.uid);
+      if (mounted) {
+        setState(() {
+          _userData = data;
+          _isLoading = false;
+        });
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,19 +61,49 @@ class ProfileScreen extends StatelessWidget {
               child: Icon(Icons.person, size: 50, color: Colors.black),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'John Doe',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+            if (_isLoading)
+              const CircularProgressIndicator(color: Color(0xFF00FF87))
+            else if (_userData != null)
+              Column(
+                children: [
+                  Text(
+                    _userData!['name'] ?? 'No name',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _userData!['email'] ?? 'No email',
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Member since: ${_formatDate(_userData!['createdAt'])}',
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              )
+            else
+              const Column(
+                children: [
+                  Text(
+                    'No user data found',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Please try logging out and back in',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'john.doe@example.com',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
             const SizedBox(height: 40),
 
             // Options
@@ -71,7 +137,24 @@ class ProfileScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () async {
+                  try {
+                    await _authService.signOut();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Logged out successfully'),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Error logging out')),
+                      );
+                    }
+                  }
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
@@ -87,6 +170,16 @@ class ProfileScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'Unknown';
+    try {
+      final date = (timestamp as Timestamp).toDate();
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return 'Unknown';
+    }
   }
 }
 
