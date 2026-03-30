@@ -1,18 +1,8 @@
 import 'package:flutter/material.dart';
-
-class MatchData {
-  const MatchData({
-    required this.team1,
-    required this.team2,
-    required this.scoreOrTime,
-    required this.isLive,
-  });
-
-  final String team1;
-  final String team2;
-  final String scoreOrTime;
-  final bool isLive;
-}
+import '../services/football_api_service.dart';
+import '../services/demo_stream_service.dart';
+import '../models/match_model.dart';
+import 'video_player_screen.dart';
 
 class MatchesScreen extends StatefulWidget {
   const MatchesScreen({
@@ -30,48 +20,43 @@ class MatchesScreen extends StatefulWidget {
 
 class _MatchesScreenState extends State<MatchesScreen> {
   bool _showClubs = true;
+  List<MatchModel> _clubMatches = [];
+  List<MatchModel> _countryMatches = [];
+  bool _isLoading = true;
+  String? _error;
 
-  final List<MatchData> _clubMatches = const [
-    MatchData(
-      team1: 'Barcelona',
-      team2: 'Real Madrid',
-      scoreOrTime: '2 - 1',
-      isLive: true,
-    ),
-    MatchData(
-      team1: 'Man City',
-      team2: 'Arsenal',
-      scoreOrTime: '1 - 0',
-      isLive: false,
-    ),
-    MatchData(
-      team1: 'Bayern',
-      team2: 'Chelsea',
-      scoreOrTime: 'FT 3 - 2',
-      isLive: false,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchMatches();
+  }
 
-  final List<MatchData> _countryMatches = const [
-    MatchData(
-      team1: 'Brazil',
-      team2: 'Argentina',
-      scoreOrTime: 'Live 1 - 0',
-      isLive: true,
-    ),
-    MatchData(
-      team1: 'France',
-      team2: 'Germany',
-      scoreOrTime: '20:00',
-      isLive: false,
-    ),
-    MatchData(
-      team1: 'Spain',
-      team2: 'Italy',
-      scoreOrTime: '21:30',
-      isLive: false,
-    ),
-  ];
+  Future<void> _fetchMatches() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final clubMatches = await FootballApiService.fetchLeagueMatches(
+        39,
+        2023,
+      ); // Premier League
+      final countryMatches =
+          await FootballApiService.fetchInternationalMatches();
+
+      setState(() {
+        _clubMatches = clubMatches;
+        _countryMatches = countryMatches;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
 
   void _selectFilter(bool showClubs) {
     setState(() {
@@ -81,8 +66,6 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final matches = _showClubs ? _clubMatches : _countryMatches;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Matches'),
@@ -90,57 +73,100 @@ class _MatchesScreenState extends State<MatchesScreen> {
         elevation: 0,
       ),
       backgroundColor: const Color(0xFF0D0D0D),
-      body: Column(
-        children: [
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _FilterButton(
-                    label: 'Clubs',
-                    selected: _showClubs,
-                    onTap: () => _selectFilter(true),
+      body: RefreshIndicator(
+        onRefresh: _fetchMatches,
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _FilterButton(
+                      label: 'Clubs',
+                      selected: _showClubs,
+                      onTap: () => _selectFilter(true),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _FilterButton(
-                    label: 'Countries',
-                    selected: !_showClubs,
-                    onTap: () => _selectFilter(false),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _FilterButton(
+                      label: 'Countries',
+                      selected: !_showClubs,
+                      onTap: () => _selectFilter(false),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: matches.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final match = matches[index];
-                return MatchCard(
-                  data: match,
-                  isTeam1Followed: widget.followedTeams.contains(match.team1),
-                  isTeam2Followed: widget.followedTeams.contains(match.team2),
-                  onTeam1Action: () => widget.onFollowToggle(match.team1),
-                  onTeam2Action: () => widget.onFollowToggle(match.team2),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MatchPlayerScreen(matchData: match),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF00FF87),
                       ),
-                    );
-                  },
-                );
-              },
+                    )
+                  : _error != null
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error, color: Colors.red, size: 48),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error: $_error',
+                            style: const TextStyle(color: Colors.white),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _fetchMatches,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      itemCount:
+                          (_showClubs ? _clubMatches : _countryMatches).length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final match = (_showClubs
+                            ? _clubMatches
+                            : _countryMatches)[index];
+                        return MatchCard(
+                          match: match,
+                          isTeam1Followed: widget.followedTeams.contains(
+                            match.homeTeam,
+                          ),
+                          isTeam2Followed: widget.followedTeams.contains(
+                            match.awayTeam,
+                          ),
+                          onTeam1Action: () =>
+                              widget.onFollowToggle(match.homeTeam),
+                          onTeam2Action: () =>
+                              widget.onFollowToggle(match.awayTeam),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    MatchPlayerScreen(matchData: match),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -186,7 +212,7 @@ class _FilterButton extends StatelessWidget {
 class MatchCard extends StatelessWidget {
   const MatchCard({
     super.key,
-    required this.data,
+    required this.match,
     required this.isTeam1Followed,
     required this.isTeam2Followed,
     required this.onTeam1Action,
@@ -194,7 +220,7 @@ class MatchCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final MatchData data;
+  final MatchModel match;
   final bool isTeam1Followed;
   final bool isTeam2Followed;
   final VoidCallback onTeam1Action;
@@ -221,7 +247,7 @@ class MatchCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        data.team1,
+                        match.homeTeam,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -247,7 +273,7 @@ class MatchCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  if (data.isLive)
+                  if (match.isLive)
                     const Text(
                       'LIVE',
                       style: TextStyle(
@@ -256,19 +282,55 @@ class MatchCard extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                  if (match.isLive) const SizedBox(height: 8),
+                  if (match.isLive)
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => VideoPlayerScreen(
+                              match: match,
+                              streamUrl:
+                                  DemoStreamService.getRandomDemoStream(),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.play_circle_fill, size: 16),
+                      label: const Text('Watch'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        minimumSize: const Size(0, 32),
+                      ),
+                    ),
                 ],
               ),
             ),
             Column(
               children: [
                 Text(
-                  data.scoreOrTime,
+                  match.scoreOrTime,
                   style: const TextStyle(
                     color: Color(0xFF00FF87),
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                if (match.isLive) const SizedBox(height: 4),
+                if (match.isLive)
+                  Text(
+                    match.matchTimeDisplay,
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
               ],
             ),
             Expanded(
@@ -296,7 +358,7 @@ class MatchCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        data.team2,
+                        match.awayTeam,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -318,7 +380,7 @@ class MatchCard extends StatelessWidget {
 class MatchPlayerScreen extends StatelessWidget {
   const MatchPlayerScreen({super.key, required this.matchData});
 
-  final MatchData matchData;
+  final MatchModel matchData;
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +392,7 @@ class MatchPlayerScreen extends StatelessWidget {
       backgroundColor: const Color(0xFF0D0D0D),
       body: Center(
         child: Text(
-          '${matchData.team1} vs ${matchData.team2} - ${matchData.scoreOrTime}',
+          '${matchData.homeTeam} vs ${matchData.awayTeam} - ${matchData.scoreOrTime}',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white, fontSize: 18),
         ),
